@@ -1,0 +1,8 @@
+# Streamlit dashboard (app.py - kept as backup)
+streamlit
+pandas
+plotly
+openpyxl
+
+# Dash dashboard (dash_app.py - the new presentation)
+dash
