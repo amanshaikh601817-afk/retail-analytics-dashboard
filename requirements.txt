@@ -1,8 +1,12 @@
-# Streamlit dashboard (app.py - kept as backup)
-streamlit
-pandas
-plotly
-openpyxl
-
-# Dash dashboard (dash_app.py - the new presentation)
+# Dash dashboard (dash_app.py - the main deployment app)
 dash
+plotly
+pandas
+openpyxl
+ucimlrepo
+
+# Production server for Render (Linux only; not needed for local runs)
+gunicorn
+
+# Streamlit dashboard (app.py - kept as backup, optional locally)
+streamlit

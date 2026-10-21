@@ -31,9 +31,16 @@ from data_prep import (
     POSITIVE, NEGATIVE, NEUTRAL, CHART_TEXT, TICK_TEXT,
 )
 
-# All summary tables/numbers computed once (Excel read + SQL)
-D = data_prep.prepare_data()
-D._gbp = data_prep._gbp
+# All summary tables/numbers computed once (Excel / UCI download + SQL).
+# If loading fails (no Excel file and UCI unreachable), the app still
+# starts and every slide clearly shows the error instead of fake data.
+try:
+    D = data_prep.prepare_data()
+    D._gbp = data_prep._gbp
+    LOAD_ERROR = None
+except Exception as exc:                      # pragma: no cover - network fail
+    D = None
+    LOAD_ERROR = str(exc)
 
 SRC = data_prep
 
@@ -612,9 +619,33 @@ def slide_6():
 SLIDE_BUILDERS = [slide_1, slide_2, slide_3, slide_4, slide_5, slide_6]
 
 
+def data_error_slide():
+    """Shown on every slide while the data source is unavailable:
+    no local Excel file and the UCI Online Retail dataset could not
+    be retrieved. No sample/fake data is ever substituted."""
+    return html.Div(
+        [
+            html.H2("Data unavailable", className="slide-title"),
+            html.P(
+                "The dashboard could not load the genuine Online Retail "
+                "dataset, so no KPIs are displayed (fake/sample data is "
+                "never substituted). If you have Online Retail.xlsx locally, "
+                "place it in the project folder. On a hosting service, make "
+                "sure the network allows retrieving UCI dataset id 352 via "
+                "the ucimlrepo package.",
+                className="caption",
+            ),
+            html.Pre(str(LOAD_ERROR), className="summary-box"),
+        ],
+        className="slide-wrap",
+    )
+
+
 def build_slide(slide_no):
     """Compose the components of one slide (pure function, testable)."""
     slide_no = max(1, min(N_SLIDES, int(slide_no)))
+    if D is None:
+        return html.Div(data_error_slide(), className="slide-wrap")
     return html.Div(SLIDE_BUILDERS[slide_no - 1](), className="slide-wrap")
 
 
@@ -717,6 +748,17 @@ def navigate(next_clicks, prev_clicks, home_clicks, data):
     return {"slide": compute_new_slide(action, current)}
 
 
+# WSGI entry point for production servers (Render uses Gunicorn:
+#   gunicorn dash_app:server )
+server = app.server
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8050, debug=False)
+    import os
+
+    app.run(
+        host="0.0.0.0" if os.environ.get("PORT") else "127.0.0.1",
+        port=int(os.environ.get("PORT", 8050)),
+        debug=False,
+    )
 
