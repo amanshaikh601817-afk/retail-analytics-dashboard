@@ -4,9 +4,17 @@
 # A separate slide-by-slide presentation built with Plotly Dash.
 # The Streamlit version (app.py) is kept untouched as a backup.
 #
-# Data: the SAME cleaned Online Retail.xlsx rows and metric
-# definitions, taken from data_prep.py (identical cleaning rules),
-# plus the SAME SQLite queries from sql_queries.sql.
+# Data: PRECOMPUTED compact results in dashboard_data/, produced
+# locally by build_dashboard_data.py from the genuine Online
+# Retail.xlsx + data_prep cleaning rules + sql_queries.sql:
+#   kpis.json / monthly.csv / top_products.csv / sql_monthly.csv /
+#   sql_top.csv / sql_country.csv / orders_count.csv /
+#   repeat_top.csv / preview.csv
+#
+# This keeps the hosted app lightweight (fits Render's 512MB free
+# plan): NO full Excel read, NO UCI download, NO SQLite build and
+# no full-table processing happens at web startup - the slides
+# only ever read the small files above.
 #
 # Structure (one slide visible at a time):
 #   Slide 1  Executive Overview  - title + 4 KPI cards + summary
@@ -17,32 +25,176 @@
 #   Slide 6  Business Recommendations + Action Plan
 #
 # Run:  python dash_app.py   then open http://127.0.0.1:8050
+# Hosted: gunicorn dash_app:server --workers 1 ...
 # =====================================================
+
+import json
+import os
 
 import dash
 from dash import Dash, html, dcc, Input, Output, State, ctx, no_update
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from types import SimpleNamespace
 
+# data_prep is imported ONLY for the formatting helpers and theme
+# colours shared with the Streamlit app. prepare_data() is never
+# called here, so no Excel/UCI/SQLite work can happen at import.
 import data_prep
 from data_prep import (
     ACCENT_CYAN, ACCENT_BLUE, ACCENT_VIOLET,
     POSITIVE, NEGATIVE, NEUTRAL, CHART_TEXT, TICK_TEXT,
 )
 
-# All summary tables/numbers computed once (Excel / UCI download + SQL).
-# If loading fails (no Excel file and UCI unreachable), the app still
-# starts and every slide clearly shows the error instead of fake data.
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_data")
+SRC = data_prep
+
+# The compact files the hosted app is allowed to read.
+REQUIRED_DATA_FILES = [
+    "kpis.json", "monthly.csv", "top_products.csv", "sql_monthly.csv",
+    "sql_top.csv", "sql_country.csv", "orders_count.csv",
+    "repeat_top.csv", "preview.csv",
+]
+
+BUILD_INSTRUCTIONS = {
+    "kpis.json": "KPI / data-quality / recommendation scalars",
+    "monthly.csv": "monthly revenue + month-over-month change (slide 2)",
+    "top_products.csv": "top 10 products by revenue (slide 3)",
+    "sql_monthly.csv": "SQL query 1 - monthly revenue table (slides 4-5)",
+    "sql_top.csv": "SQL query 2 - top 10 products table (slide 5)",
+    "sql_country.csv": "SQL query 3 - revenue by country (slides 4-5)",
+    "orders_count.csv": "SQL query 4 - orders per month",
+    "repeat_top.csv": "SQL query 5 - top repeat customers (slide 4)",
+    "preview.csv": "raw data preview rows (slide 5)",
+}
+
+
+def _no_comparison_pct(pct):
+    """True when a MoM value cannot be compared (same rule as data_prep)."""
+    return pct is None or pd.isna(pct)
+
+
+def _pct_txt(pct):
+    """'+12.3% / -4.0% / n/a' from a month-over-month percentage."""
+    return "n/a" if _no_comparison_pct(pct) else f"{pct:+,.1f}%"
+
+
+def _top10_country_frame(rows, total_revenue):
+    """kpis.json stores the 5 'leading country' cards; restore framing."""
+    df = pd.DataFrame(rows)
+    if not len(df):
+        return df
+    if total_revenue > 0:
+        df["share_pct"] = df["Revenue_GBP"] / total_revenue * 100.0
+    else:
+        df["share_pct"] = 0.0
+    return df
+
+
+# ---------------------------------------------------------------
+# Compact-data loader: the ONLY data work this app performs.
+# ---------------------------------------------------------------
+def load_dashboard_data(data_dir=DATA_DIR):
+    """
+    Reads the precomputed files created by build_dashboard_data.py
+    and rebuilds the exact namespace the slide builders expect.
+
+    Raises FileNotFoundError listing the missing files - the caller
+    shows build instructions instead of any fake data.
+    """
+    missing = [f for f in REQUIRED_DATA_FILES
+               if not os.path.exists(os.path.join(data_dir, f))]
+    if missing:
+        raise FileNotFoundError(
+            "dashboard_data/ is missing required files: "
+            + ", ".join(missing)
+        )
+
+    with open(os.path.join(data_dir, "kpis.json"), encoding="utf-8") as handle:
+        K = json.load(handle)
+
+    # keep_default_na=False + explicit empty-string NA list: this keeps the
+    # literal "n/a" MoM labels ("n/a" would otherwise be parsed as NaN)
+    # while still turning empty numeric cells into NaN.
+    monthly = pd.read_csv(os.path.join(data_dir, "monthly.csv"),
+                          keep_default_na=False, na_values=[""])
+    top_products = pd.read_csv(os.path.join(data_dir, "top_products.csv"))
+    sql_monthly = pd.read_csv(os.path.join(data_dir, "sql_monthly.csv"))
+    sql_top = pd.read_csv(os.path.join(data_dir, "sql_top.csv"))
+    sql_country = pd.read_csv(os.path.join(data_dir, "sql_country.csv"))
+    sql_orders_count = pd.read_csv(os.path.join(data_dir, "orders_count.csv"))
+    sql_repeat = pd.read_csv(os.path.join(data_dir, "repeat_top.csv"),
+                             dtype={"CustomerID": str})
+    preview_df = pd.read_csv(os.path.join(data_dir, "preview.csv"))
+
+    total_revenue = float(K["total_revenue"])
+
+    return SimpleNamespace(
+        safe_data=bool(K["safe_data"]),
+        # data quality (slide 5)
+        total_rows=int(K["total_rows"]),
+        rows_with_missing=int(K["rows_with_missing"]),
+        missing_customer_rows=int(K["missing_customer_rows"]),
+        missing_description_rows=int(K["missing_description_rows"]),
+        cancelled_rows=int(K["cancelled_rows"]),
+        nonpositive_qty_rows=int(K["nonpositive_qty_rows"]),
+        nonpositive_price_rows=int(K["nonpositive_price_rows"]),
+        excluded_rows=int(K["excluded_rows"]),
+        overlap_rows=int(K["overlap_rows"]),
+        kept_rows=int(K["kept_rows"]),
+        # headline KPIs (slides 1, 5, 6)
+        total_revenue=total_revenue,
+        distinct_invoices=int(K["distinct_invoices"]),
+        avg_order_value=float(K["avg_order_value"]),
+        valid_customers=int(K["valid_customers"]),
+        identified_customers=int(K["identified_customers"]),
+        verify_total=float(K["verify_total"]),
+        revenue_difference=float(K["revenue_difference"]),
+        revenue_verified=bool(K["revenue_verified"]),
+        # tables for the slides
+        monthly=monthly,
+        product_totals=top_products,          # top 10 == top of full sort
+        n_products=int(K["n_products"]),      # full product count for text
+        avg_product_revenue=float(K["avg_product_revenue"]),
+        top_products=top_products,
+        sql_monthly=sql_monthly,
+        sql_top=sql_top,
+        sql_country=sql_country,
+        sql_orders_count=sql_orders_count,
+        sql_repeat=sql_repeat,
+        country_leading=_top10_country_frame(
+            K["country_leading"], total_revenue),
+        repeat_ids=int(K["repeat_ids"]),
+        repeat_revenue=float(K["repeat_revenue"]),
+        repeat_revenue_share=float(K["repeat_revenue_share"]),
+        avg_orders_repeat=float(K["avg_orders_repeat"]),
+        single_purchase_share=float(K["single_purchase_share"]),
+        best_month=K["best_month"],
+        weakest_month=K["weakest_month"],
+        first_month=K["first_month"],
+        last_month=K["last_month"],
+        last_pct=K["last_pct"],
+        uk_share=float(K["uk_share"]),
+        uk_revenue=float(K["uk_revenue"]),
+        top3_share=float(K["top3_share"]),
+        preview_df=preview_df,
+        _pct_txt=_pct_txt,
+        _period_label=data_prep._period_label,
+        _gbp=data_prep._gbp,
+    )
+
+
+# All summary tables/numbers are PRECOMPUTED locally (genuine Online
+# Retail.xlsx + the same cleaning rules + the real SQL queries).
+# If dashboard_data/ is missing, the app still starts and every
+# slide clearly shows the build instructions - no fake data ever.
 try:
-    D = data_prep.prepare_data()
-    D._gbp = data_prep._gbp
+    D = load_dashboard_data()
     LOAD_ERROR = None
-except Exception as exc:                      # pragma: no cover - network fail
+except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError) as exc:
     D = None
     LOAD_ERROR = str(exc)
-
-SRC = data_prep
 
 # Multicolour palette for the slide-3 product bars (rank order)
 PRODUCT_PALETTE = [
@@ -219,9 +371,10 @@ def slide_1():
         summary_text = [html.Div("No valid sales rows found after cleaning — "
                                  "check the data quality slide (5).")]
     return [head, kpis, *summary_text,
-            html.P("Every number is computed live from Online Retail.xlsx (valid sales rows "
-                   "only: not cancelled, Quantity > 0, UnitPrice > 0). All amounts in British "
-                   "pounds (£). Use the buttons below to move through the deck.",
+            html.P("Every number is precomputed locally from the genuine Online Retail.xlsx "
+                   "using build_dashboard_data.py (valid sales rows only: not cancelled, "
+                   "Quantity > 0, UnitPrice > 0). All amounts in British pounds (£). Use the "
+                   "buttons below to move through the deck.",
                    className="caption")]
 
 
@@ -300,7 +453,7 @@ def slide_3():
         html.H3("Highest-revenue products", className="section"),
         leaders_grid,
         html.P(f"Colour note: all Top-10 products sit far above the dataset-wide average of "
-               f"£{D.avg_product_revenue:,.0f} across {len(D.product_totals):,} products, so "
+               f"£{D.avg_product_revenue:,.0f} across {D.n_products:,} products, so "
                f"they land in the green band — exactly what a Top 10 should look like.",
                className="caption"),
     ]
@@ -343,8 +496,9 @@ def slide_4():
 
     return [
         html.H2("Country and Customer Insights", className="slide-title"),
-        html.P("Country revenue and repeat-customer facts computed from the cleaned rows and "
-               "the SQLite sales table. No customer behaviour is assumed beyond the data.",
+        html.P("Country revenue and repeat-customer facts precomputed locally from the "
+               "cleaned rows and the SQLite sales table (build_dashboard_data.py). No "
+               "customer behaviour is assumed beyond the data.",
                className="caption"),
         html.Div(
             [
@@ -432,7 +586,7 @@ def slide_5():
         html.H2("SQL Analysis and Data Quality", className="slide-title"),
         html.P(
             "SQL logic in one minute: the cleaned valid rows live in the SQLite table `sales` "
-            "(duplicate-safe, built from the same DataFrame the KPIs use). Monthly revenue = "
+            "(duplicate-safe, built locally from the same DataFrame the KPIs use). Monthly revenue = "
             "SUM(Revenue) grouped by month; top products = largest SUM(Revenue) per product "
             "(LIMIT 10); country revenue = SUM(Revenue) per country; repeat customers = "
             "GROUP BY CustomerID HAVING COUNT(DISTINCT InvoiceNo) > 1 (rows without a "
@@ -620,19 +774,38 @@ SLIDE_BUILDERS = [slide_1, slide_2, slide_3, slide_4, slide_5, slide_6]
 
 
 def data_error_slide():
-    """Shown on every slide while the data source is unavailable:
-    no local Excel file and the UCI Online Retail dataset could not
-    be retrieved. No sample/fake data is ever substituted."""
+    """Shown on every slide while the precomputed data is unavailable:
+    dashboard_data/ (built locally by build_dashboard_data.py) is
+    missing or unreadable. No sample/fake data is ever substituted."""
+    missing = []
+    for name, purpose in BUILD_INSTRUCTIONS.items():
+        missing.append(html.Li(f"{name} — {purpose}"))
     return html.Div(
         [
-            html.H2("Data unavailable", className="slide-title"),
+            html.H2("Precomputed data missing", className="slide-title"),
             html.P(
-                "The dashboard could not load the genuine Online Retail "
-                "dataset, so no KPIs are displayed (fake/sample data is "
-                "never substituted). If you have Online Retail.xlsx locally, "
-                "place it in the project folder. On a hosting service, make "
-                "sure the network allows retrieving UCI dataset id 352 via "
-                "the ucimlrepo package.",
+                "The dashboard loads compact precomputed results from the "
+                "dashboard_data/ folder (no raw dataset is ever loaded on "
+                "the server). Those files are missing here, so no KPIs are "
+                "displayed (fake/sample data is never substituted). To fix "
+                "this, build them locally and commit them to the repository:",
+                className="caption",
+            ),
+            html.Pre(
+                "python build_dashboard_data.py          # needs Online Retail.xlsx locally\n"
+                "git add dashboard_data/ && git commit -m \"Add precomputed dashboard data\"\n"
+                "git push",
+                className="summary-box",
+            ),
+            html.P(
+                "Required files and what each one feeds:",
+                className="caption",
+            ),
+            html.Ul(missing, className="caption"),
+            html.P(
+                "Every KPI, SQL result and recommendation shown afterwards is "
+                "computed from the genuine dataset on your machine - nothing "
+                "is hardcoded or invented.",
                 className="caption",
             ),
             html.Pre(str(LOAD_ERROR), className="summary-box"),

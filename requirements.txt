@@ -1,12 +1,14 @@
-# Dash dashboard (dash_app.py - the main deployment app)
+# Production server + hosted dashboard dependencies (Render).
+# The hosted app (dash_app.py) only reads the small precomputed
+# files in dashboard_data/ - it does NOT read Excel, never calls
+# ucimlrepo and never opens SQLite, so nothing heavier is needed.
 dash
 plotly
 pandas
-openpyxl
-ucimlrepo
-
-# Production server for Render (Linux only; not needed for local runs)
 gunicorn
 
-# Streamlit dashboard (app.py - kept as backup, optional locally)
-streamlit
+# Local-only extras (NOT needed for the Render deployment; install on
+# your own machine with: pip install -r requirements-local.txt):
+#   openpyxl  - read Online Retail.xlsx in build_dashboard_data.py
+#   streamlit - app.py (Streamlit backup version)
+#   ucimlrepo - data_prep.py UCI fallback (only if the Excel file is absent)
