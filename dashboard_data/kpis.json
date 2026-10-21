@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-10-21T13:12:21.684072",
+  "source": {
+    "file": "Online Retail.xlsx",
+    "cleaning_module": "data_prep.prepare_data()",
+    "sql_file": "sql_queries.sql"
+  },
+  "safe_data": true,
+  "total_rows": 541909,
+  "rows_with_missing": 135080,
+  "missing_customer_rows": 135080,
+  "missing_description_rows": 1454,
+  "cancelled_rows": 9288,
+  "nonpositive_qty_rows": 10624,
+  "nonpositive_price_rows": 2517,
+  "excluded_rows": 11805,
+  "overlap_rows": 9288,
+  "kept_rows": 530104,
+  "total_revenue": 10666684.544,
+  "distinct_invoices": 19960,
+  "avg_order_value": 534.403033266533,
+  "valid_customers": 4338,
+  "identified_customers": 4372,
+  "verify_total": 10666684.544,
+  "revenue_difference": 0.0,
+  "revenue_verified": true,
+  "avg_product_revenue": 2649.449712866369,
+  "n_products": 4026,
+  "first_month": {
+    "month": "2010-12",
+    "revenue": 823746.14
+  },
+  "last_month": {
+    "month": "2011-12",
+    "revenue": 638792.68
+  },
+  "best_month": {
+    "month": "2011-11",
+    "revenue": 1509496.33
+  },
+  "weakest_month": {
+    "month": "2011-02",
+    "revenue": 523631.89
+  },
+  "last_pct": -57.68173348258488,
+  "country_leading": [
+    {
+      "Country": "United Kingdom",
+      "Revenue_GBP": 9025222.08,
+      "share_pct": 84.61131519143575
+    },
+    {
+      "Country": "Netherlands",
+      "Revenue_GBP": 285446.34,
+      "share_pct": 2.6760549524319
+    },
+    {
+      "Country": "EIRE",
+      "Revenue_GBP": 283453.96,
+      "share_pct": 2.6573764212371183
+    },
+    {
+      "Country": "Germany",
+      "Revenue_GBP": 228867.14,
+      "share_pct": 2.14562584143109
+    },
+    {
+      "Country": "France",
+      "Revenue_GBP": 209715.11,
+      "share_pct": 1.9660758611068567
+    }
+  ],
+  "n_countries": 38,
+  "uk_share": 84.61131519143575,
+  "uk_revenue": 9025222.08,
+  "top3_share": 5.148770526910597,
+  "repeat_ids": 2845,
+  "repeat_revenue": 8295096.17,
+  "repeat_revenue_share": 77.76639625726988,
+  "avg_orders_repeat": 5.989103690685413,
+  "single_purchase_share": 34.41678192715537
+}
