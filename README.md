@@ -1,3 +1,4 @@
+> **🔗 Live Dashboard:** [Open Retail Intelligence Dashboard](https://retail-intelligence-dash.onrender.com)
 # Retail Intelligence — Retail Sales Analytics Dashboard
 
 An end-to-end retail analytics project: I cleaned a real 541,909-row transaction dataset, built KPIs, wrote SQL queries against a SQLite database, and turned the results into a six-slide executive dashboard built with Plotly Dash.
